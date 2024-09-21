@@ -16,7 +16,7 @@
 </head>
 <body>
     <video id="background-video" autoplay loop muted>
-        <source src="music.mp4" type="video/mp4">
+        <source src="https://v4lcs.github.io/ddos/music.mp4" type="video/mp4">
     </video>
 
     <div id="info">
@@ -25,6 +25,18 @@
             <input type="text" id="username" placeholder="Username">
             <input type="password" id="password" placeholder="Password">
             <button id="signup-button">Sign Up</button>
+        </div>
+        <div id="attack-section" style="display: none;">
+            <div id="botnet-info">CURRENTLY CONNECTED TO <span id="botnet-count">4489</span> BOTNETS</div>
+            <input type="text" id="attack-ip" placeholder="Enter IP">
+            <input type="text" id="attack-port" placeholder="Enter Port">
+            <select id="ping-method">
+                <option value="method1">UDP</option>
+                <option value="method2">TCP</option>
+                <option value="method3">HTTP</option>
+                <option value="method4">CFB (cloudflare bypass)</option>
+            </select>
+            <button id="send-attack-button">Send Attack With Silent</button>
         </div>
     </div>
 
